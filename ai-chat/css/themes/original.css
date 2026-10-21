@@ -1,0 +1,26 @@
+/* 原始浅色主题：保留项目最初的 Chrome 风格配色 */
+:root {
+  --bg-main: #ffffff;
+  --bg-sidebar: #f8f9fa;
+  --bg-ui: #d3e3fd;
+  --bg-ui-hover: #c2d8fc;
+  --bg-msg-user: #d3e3fd;
+  --bg-msg-ai: #f8f9fa;
+  --text: #202124;
+  --text-dim: #5f6368;
+  --text-light: #80868b;
+  --accent: #1a73e8;
+  --accent-hover: #1557b0;
+  --border: #dadce0;
+  --border-light: #e8eaed;
+  --shadow: rgba(60, 64, 67, .12);
+  --danger: #d93025;
+  --code-bg: #f1f3f4;
+  --think-bg: #f8f9fa;
+  --think-border: #dadce0;
+  --think-accent: #C2D8FC;
+  --think-text: #5f6368;
+  --think-hover: #e8eaed;
+  --code-text: #d93025;
+  --btn-text: #fff;
+}

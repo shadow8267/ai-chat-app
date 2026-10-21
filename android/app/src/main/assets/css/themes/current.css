@@ -1,0 +1,26 @@
+/* 当前主题：VSCode Dark */
+:root {
+  --bg-main: #1e1e1e;
+  --bg-sidebar: #252526;
+  --bg-ui: #37373d;
+  --bg-ui-hover: #454549;
+  --bg-msg-user: #264f78;
+  --bg-msg-ai: #2d2d30;
+  --text: #cccccc;
+  --text-dim: #999999;
+  --text-light: #858585;
+  --accent: #007acc;
+  --accent-hover: #1a8ad4;
+  --border: #3e3e42;
+  --border-light: #333333;
+  --shadow: rgba(0, 0, 0, .28);
+  --danger: #f44747;
+  --code-bg: #1b1b1b;
+  --think-bg: #252526;
+  --think-border: #3d3828;
+  --think-accent: #d4b877;
+  --think-text: #c0a870;
+  --think-hover: #333027;
+  --code-text: #d69d85;
+  --btn-text: #fff;
+}

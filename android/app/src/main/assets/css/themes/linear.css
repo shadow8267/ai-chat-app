@@ -1,0 +1,33 @@
+/* Linear 风格：克制的石墨深色工作台 */
+:root {
+  --bg-main: #17181c;
+  --bg-sidebar: #1d1f24;
+  --bg-ui: #272a31;
+  --bg-ui-hover: #31353e;
+  --bg-msg-user: #283448;
+  --bg-msg-ai: #202329;
+  --text: #e7e9ee;
+  --text-dim: #a0a7b4;
+  --text-light: #737b8b;
+  --accent: #8b9cff;
+  --accent-hover: #a4b0ff;
+  --border: #343943;
+  --border-light: #292d35;
+  --shadow: rgba(0, 0, 0, .35);
+  --danger: #ff7b8b;
+  --code-bg: #141519;
+  --think-bg: #1d1f24;
+  --think-border: #343943;
+  --think-accent: #8b9cff;
+  --think-text: #a0a7b4;
+  --think-hover: #292d35;
+  --code-text: #c5ccff;
+  --btn-text: #fff;
+}
+
+body { letter-spacing: .01em; }
+.sidebar-header .logo { letter-spacing: .02em; }
+.new-chat-btn { background: var(--accent-soft); color: var(--accent); }
+.new-chat-btn:hover { background: color-mix(in srgb, var(--accent) 22%, var(--bg-main)); }
+.msg.user { border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); }
+.msg.ai { border-color: var(--border-light); }

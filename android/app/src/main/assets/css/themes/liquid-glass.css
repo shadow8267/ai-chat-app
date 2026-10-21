@@ -1,0 +1,762 @@
+/* ==========================================================================
+   玻璃 · Glass（正式主题，长期维护）
+   --------------------------------------------------------------------------
+   半透明玻璃质感。与常见「磨砂玻璃」的区别在于：
+
+     · 磨砂玻璃 = 半透明白 + 大半径模糊，把背景糊成一片
+     · 本主题   = 很低的白色占比 + 纯高斯模糊（blur()），背景仍然看得清，
+                  只是像隔着一层真实玻璃；再加上四条边的内高光（玻璃厚度）
+                  与斜向渐变（厚薄变化）。设计灵感来自 iOS 的 Liquid Glass。
+
+   ⚠️ 三个已被明确否掉的方案，不要再加回来：
+     ① 高饱和 / 提亮这类增色滤镜 —— 玻璃面会比周围更亮更艳，看着是「泛白」
+        而不是「模糊」。只用 blur() 就好。
+     ② 颗粒（feTurbulence）与拉丝线这类「细纹」—— 两次被说「太丑 / 去掉」。
+     ③ 跟随鼠标的光斑（镜面高光）—— 触屏上点一下会留下一个不动的光球。
+        想要「移到 UI 上边框发光」用 :hover 的 border-color + box-shadow。
+
+   ⚠️ 一个踩过的 CSS 陷阱：自定义属性里的 var() 是在「声明它的那个元素」上
+      解析的，不是在使用处。把含 var(--x) 的渐变定义在 :root 再到处引用，
+      --x 会在 <html> 上定死为默认值，元素上的内联值永远不生效。
+
+   所有规则都限定在 html[data-theme="liquid-glass"] 之下，与其它主题零耦合。
+   若要移除本主题，需要一并清理：本文件、index.html 的
+   <link id="theme-liquid-glass"> 与主题卡片、js/main.js 的 THEME_IDS 项与
+   syncLiquidGlassPanelState()、installAppBackground() 及 index.html 里的
+   id="appBgSection" 区块、css/style.css 中 app-bg-custom 开头的背景层规则。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 材质与变量
+   -------------------------------------------------------------------------- */
+html[data-theme="liquid-glass"] {
+  /* ---- 玻璃本体：白色占比低、模糊轻 ---- */
+  --lg-fill:        rgba(255, 255, 255, .075);
+  --lg-fill-strong: rgba(255, 255, 255, .13);
+  --lg-fill-solid:  rgba(255, 255, 255, .27);   /* 弹窗：要压住背后内容 */
+  --lg-fill-thin:   rgba(255, 255, 255, .042);
+  --lg-fill-soft:   rgba(255, 255, 255, .065);
+  --lg-blur:        14px;
+  /* ⚠️ 只用 blur()（高斯模糊）。不要再叠高饱和 / 提亮这类增色滤镜：
+     它们会让玻璃面比周围背景更亮更艳，看起来是「泛白」而不是「模糊」，
+     用户反馈的「太亮」有一部分就来自这里。 */
+
+  /* ---- 表面渐变：模拟玻璃的厚薄，上薄下厚 ---- */
+  --lg-sheen:       linear-gradient(135deg, rgba(255, 255, 255, .32) 0%, rgba(255, 255, 255, .03) 46%, rgba(255, 255, 255, .17) 100%);
+  --lg-sheen-soft:  linear-gradient(150deg, rgba(255, 255, 255, .20) 0%, rgba(255, 255, 255, .02) 56%, rgba(255, 255, 255, .12) 100%);
+
+  /* ⚠️ 不要再往玻璃面上叠任何「细纹」：颗粒（feTurbulence）与 115° 拉丝线
+     都被用户明确否掉过（「太丑 / 这种背景的线条去掉」）。
+     表面只留一层斜向渐变 --lg-sheen 表现厚薄就够了。 */
+
+  /* ---- 边缘：四条边的内高光 = 玻璃厚度 + 一圈外发丝光 ---- */
+  --lg-edge:        inset 0 1.5px 0 rgba(255, 255, 255, .68),
+                    inset 0 -1.5px 0 rgba(255, 255, 255, .30),
+                    inset 2px 0 0 rgba(255, 255, 255, .42),
+                    inset -2px 0 0 rgba(255, 255, 255, .42),
+                    inset 0 0 30px rgba(255, 255, 255, .09),
+                    0 0 0 1px rgba(112, 134, 170, .17);
+  --lg-edge-soft:   inset 0 1px 0 rgba(255, 255, 255, .52),
+                    inset 0 -1px 0 rgba(255, 255, 255, .20);
+  --lg-edge-glow:   inset 0 1px 0 rgba(255, 255, 255, .50),
+                    inset 0 -1px 0 rgba(255, 255, 255, .20),
+                    inset 1px 0 0 rgba(255, 255, 255, .34),
+                    inset -1px 0 0 rgba(255, 255, 255, .34),
+                    0 0 0 1px rgba(255, 255, 255, .40),
+                    0 0 0 2px rgba(112, 134, 170, .12),
+                    0 0 24px rgba(255, 255, 255, .18);
+  --lg-stroke:      rgba(255, 255, 255, .40);
+  --lg-stroke-soft: rgba(255, 255, 255, .22);
+
+  /* ---- 浮起阴影：比磨砂更柔更散 ---- */
+  --lg-shadow:      0 6px 24px rgba(31, 38, 135, .10);
+  --lg-shadow-lg:   0 18px 50px rgba(31, 38, 135, .18);
+  --lg-shadow-float: 0 18px 44px rgba(40, 54, 96, .26), 0 3px 10px rgba(40, 54, 96, .14);
+
+  --lg-radius:      24px;
+  --lg-radius-sm:   15px;
+  --lg-radius-pill: 999px;
+  --lg-panel-inset: 12px;   /* 浮动侧栏与窗口边缘的距离 */
+
+  /* ---- 默认底色调（用户自选背景图时改用全局的 --app-bg-image，见 style.css）---- */
+  --lg-wallpaper-default: #d9e2f1;
+
+  /* ---- 覆盖主题色：深色文字，保证在浅色玻璃上的可读性 ---- */
+  /* ⚠️ 侧栏 / 面板的底色走的是 --bg-sidebar 这一组（不是 --lg-fill），
+     调「太亮」时两组都要动，否则侧栏看起来没变。 */
+  --bg-main:        rgba(255, 255, 255, .075);
+  --bg-sidebar:     rgba(255, 255, 255, .105);
+  --bg-ui:          rgba(255, 255, 255, .12);
+  --bg-ui-hover:    rgba(255, 255, 255, .20);
+  --bg-msg-user:    rgba(10, 132, 255, .14);
+  --bg-msg-ai:      rgba(255, 255, 255, .18);
+
+  --text:           #10131a;
+  --text-dim:       #3d434e;
+  --text-light:     #626a77;
+
+  --accent:         #0a84ff;
+  --accent-hover:   #339fff;
+
+  --border:         rgba(255, 255, 255, .36);
+  --border-light:   rgba(255, 255, 255, .21);
+
+  --shadow:         rgba(31, 38, 135, .16);
+  --danger:         #ff3b30;
+  --code-bg:        rgba(255, 255, 255, .26);
+  --think-bg:       rgba(255, 255, 255, .16);
+  --think-border:   rgba(255, 255, 255, .30);
+  /* 思考块跟主题强调蓝同源（--accent #0a84ff 的加深版，浅玻璃底上更读得清），
+     不再用原来那套土黄/暗金 —— 和整页的蓝色语言统一。 */
+  --think-accent:   #0a6fd9;
+  --think-text:     #46597a;
+  --think-hover:    rgba(255, 255, 255, .24);
+  --code-text:      #b3402f;
+  --btn-text:       #ffffff;
+
+  --radius:         17px;
+  --radius-sm:      13px;
+  --radius-lg:      21px;
+  --radius-xl:      28px;
+
+  --surface-raised: rgba(255, 255, 255, .17);
+  --surface-soft:   rgba(255, 255, 255, .09);
+  --accent-soft:    rgba(10, 132, 255, .16);
+  --danger-soft:    rgba(255, 59, 48, .16);
+  --focus-ring:     0 0 0 3px rgba(10, 132, 255, .32);
+  --shadow-panel:   0 22px 60px rgba(31, 38, 135, .20);
+  --shadow-float:   0 10px 28px rgba(31, 38, 135, .14);
+}
+
+/* 玻璃统一配方：轻微模糊 + 高饱和高亮 + 边缘高光 */
+html[data-theme="liquid-glass"] .sidebar,
+html[data-theme="liquid-glass"] .right-panel,
+html[data-theme="liquid-glass"] .top-bar,
+html[data-theme="liquid-glass"] .input-wrapper,
+html[data-theme="liquid-glass"] .modal,
+html[data-theme="liquid-glass"] .conversation-manage-sheet,
+html[data-theme="liquid-glass"] .app-dialog,
+html[data-theme="liquid-glass"] .cs-panel,
+html[data-theme="liquid-glass"] .msg,
+html[data-theme="liquid-glass"] .discussion-msg {
+  backdrop-filter: blur(var(--lg-blur));
+  -webkit-backdrop-filter: blur(var(--lg-blur));
+}
+
+/* --------------------------------------------------------------------------
+   2. 背景
+   --------------------------------------------------------------------------
+   纯色底 + 两层极淡的光场：完全扁平的纯色会让玻璃「没东西可透」，看起来就像
+   一块白塑料；这两层光几乎看不出是渐变，观感仍是纯色，但玻璃有了层次。
+   ⚠️ 别再往上叠颗粒 / 点阵这类细纹 —— 用户明确觉得那样很丑。 */
+/* 背景画在 html 的 ::before 上，而不是 body 的 background —— 两个原因：
+   ① 可以对「图片」单独做 filter: blur()（真正的高斯模糊），不会连带糊掉页面内容；
+   ② inset 用负值放大，模糊后边缘不会露出底色。 */
+html[data-theme="liquid-glass"] body { background-color: transparent; }
+
+html[data-theme="liquid-glass"]:not(.app-bg-custom)::before {
+  content: '';
+  position: fixed;
+  inset: -2px;
+  z-index: -1;
+  background-color: var(--lg-wallpaper-default);
+  background-image:
+    radial-gradient(118% 92% at 10% -14%, rgba(255, 255, 255, .72), rgba(255, 255, 255, 0) 58%),
+    radial-gradient(112% 90% at 105% 112%, rgba(136, 162, 214, .46), rgba(136, 162, 214, 0) 62%);
+  background-size: cover, cover;
+  background-repeat: no-repeat, no-repeat;
+  background-position: center, center;
+  pointer-events: none;
+}
+
+/* 安卓原生透出真实手机壁纸时，网页不画任何背景 */
+html[data-theme="liquid-glass"].lg-native-wallpaper::before { display: none; }
+
+/* --------------------------------------------------------------------------
+   3. 主框架：侧栏是「浮在页面上的玻璃板」
+   --------------------------------------------------------------------------
+   桌面端把左右两块侧栏做成有间距、带大圆角的浮动玻璃板 —— 边缘不再是硬分割线，
+   而是浮在页面之上，缝隙里能直接看到后面的底。 */
+html[data-theme="liquid-glass"] .main { background: transparent; }
+
+@media (min-width: 769px) {
+  html[data-theme="liquid-glass"] .sidebar {
+    margin: var(--lg-panel-inset) 0 var(--lg-panel-inset) var(--lg-panel-inset);
+    height: calc(var(--app-height, 100vh) - var(--lg-panel-inset) * 2);
+    border: 1px solid var(--lg-stroke-soft);
+    border-radius: var(--lg-radius);
+    box-shadow: var(--lg-edge-soft), var(--lg-shadow-float);
+    overflow: hidden;
+  }
+  html[data-theme="liquid-glass"] .right-panel {
+    margin: var(--lg-panel-inset) var(--lg-panel-inset) var(--lg-panel-inset) 0;
+    height: calc(var(--app-height, 100vh) - var(--lg-panel-inset) * 2);
+    border: 1px solid var(--lg-stroke-soft);
+    border-radius: var(--lg-radius);
+    box-shadow: var(--lg-edge-soft), var(--lg-shadow-float);
+    overflow: hidden;
+  }
+  /* 收起时别再留一圈空白 */
+  html[data-theme="liquid-glass"] .sidebar.collapsed { margin-left: 0; border-width: 0; }
+  html[data-theme="liquid-glass"] .right-panel.collapsed { margin-right: 0; border-width: 0; box-shadow: none; }
+}
+
+html[data-theme="liquid-glass"] .top-bar {
+  background-color: var(--lg-fill);
+  border-bottom: 1px solid var(--lg-stroke-soft);
+  box-shadow: var(--lg-edge-soft);
+}
+
+html[data-theme="liquid-glass"] .sidebar-header,
+html[data-theme="liquid-glass"] .sidebar-footer { border-color: var(--lg-stroke-soft); }
+/* 侧栏底部两个下拉并排：`.api-model-row .model-select` 在 style.css 里被写成 6px，
+   比旁边的配置下拉（15px）方一大截，看着像两种控件。统一成 15px。
+   选择器要写到 html[data-theme] + .api-model-row 才压得住那条 (0-2-0)。 */
+html[data-theme="liquid-glass"] .api-model-row select {
+  border-radius: var(--lg-radius-sm);
+}
+html[data-theme="liquid-glass"] .sidebar-footer {
+  background-color: var(--lg-fill-thin);
+  border-top: 1px solid var(--lg-stroke-soft);
+  border-radius: 0 0 var(--lg-radius) var(--lg-radius);
+}
+html[data-theme="liquid-glass"] .sidebar-header { border-radius: var(--lg-radius) var(--lg-radius) 0 0; }
+html[data-theme="liquid-glass"] .panel-header { border-radius: var(--lg-radius) var(--lg-radius) 0 0; }
+
+html[data-theme="liquid-glass"] .search-box input {
+  background-color: var(--lg-fill-thin);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-pill);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* 会话项：默认透明，悬停/选中最亮 */
+html[data-theme="liquid-glass"] .conv-item {
+  border: 1px solid transparent;
+  border-radius: var(--lg-radius-sm);
+  transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+html[data-theme="liquid-glass"] .conv-item:hover {
+  background-color: var(--lg-fill-thin);
+  border-color: var(--lg-stroke-soft);
+}
+html[data-theme="liquid-glass"] .conv-item.active {
+  background-color: var(--lg-fill-strong);
+  border-color: var(--lg-stroke);
+  box-shadow: var(--lg-edge), 0 6px 20px rgba(31, 38, 135, .13);
+}
+
+/* 右侧面板的页签（参数 / 讨论 / 创作）—— 与创作工作台同一套胶囊语言 */
+html[data-theme="liquid-glass"] .panel-tabs {
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-pill);
+  background-color: var(--lg-fill-thin);
+  box-shadow: var(--lg-edge-soft);
+}
+html[data-theme="liquid-glass"] .panel-tab {
+  border: 1px solid transparent;
+  border-radius: var(--lg-radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+}
+html[data-theme="liquid-glass"] .panel-tab.active {
+  background-color: rgba(255, 255, 255, .40);
+  background-image: linear-gradient(150deg, rgba(255, 255, 255, .52), rgba(255, 255, 255, .30));
+  border-color: rgba(255, 255, 255, .38);
+  color: #0a58c2;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 3px 12px rgba(31, 38, 135, .14);
+}
+
+/* --------------------------------------------------------------------------
+   4. 消息气泡
+   -------------------------------------------------------------------------- */
+html[data-theme="liquid-glass"] .msg {
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-edge), 0 6px 22px rgba(31, 38, 135, .12);
+}
+html[data-theme="liquid-glass"] .msg.user {
+  /* 也做成玻璃（其它面板都是玻璃，只有自己是实心色块会很跳）。
+     但保留蓝色调 + 蓝边，和中性白的 AI 气泡区分开，「这是我说的话」一眼能认。 */
+  background-color: rgba(10, 132, 255, .13);
+  border: 1px solid rgba(10, 132, 255, .32);
+  color: #08131f;
+  border-bottom-right-radius: 9px;
+  backdrop-filter: blur(var(--lg-blur));
+  -webkit-backdrop-filter: blur(var(--lg-blur));
+}
+html[data-theme="liquid-glass"] .msg.ai {
+  background-color: var(--lg-fill-strong);
+  border: 1px solid var(--lg-stroke-soft);
+  border-bottom-left-radius: 9px;
+}
+html[data-theme="liquid-glass"] .action-row .action-btn {
+  background-color: var(--lg-fill-thin);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-pill);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="liquid-glass"] .action-row .action-btn:hover { background-color: var(--lg-fill-strong); }
+html[data-theme="liquid-glass"] .interrupted-note {
+  background-color: var(--lg-fill-thin);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-pill);
+  padding: 4px 12px;
+  display: inline-block;
+}
+
+/* --------------------------------------------------------------------------
+   5. 输入区（主页输入框 = 液态玻璃胶囊）
+   -------------------------------------------------------------------------- */
+html[data-theme="liquid-glass"] .input-area,
+html[data-theme="liquid-glass"] .discussion-composer,
+html[data-theme="liquid-glass"] .discussion-detail-composer {
+  background: transparent;
+  border-top: 0;
+}
+html[data-theme="liquid-glass"] .input-wrapper {
+  background-color: var(--lg-fill-strong);
+  border: 1px solid var(--lg-stroke);
+  border-radius: var(--lg-radius-pill);
+  box-shadow: var(--lg-edge), var(--lg-shadow);
+  padding-left: 22px;
+}
+html[data-theme="liquid-glass"] .input-wrapper:focus-within {
+  box-shadow: var(--focus-ring), var(--lg-edge-glow), var(--lg-shadow-lg);
+}
+/* 发送键：跟胶囊输入框同一套玻璃语言 —— 圆形（胶囊的 r 角）、主题强调蓝而不是
+   自造的蓝紫渐变、玻璃内高光 + 柔和投影。 */
+html[data-theme="liquid-glass"] .send-btn {
+  border-radius: var(--lg-radius-pill);
+  background-color: rgba(10, 132, 255, .80);
+  background-image: linear-gradient(150deg, rgba(255, 255, 255, .40), rgba(255, 255, 255, 0) 62%);
+  border: 1px solid rgba(255, 255, 255, .48);
+  color: #fff;
+  box-shadow: var(--lg-edge-soft), 0 4px 14px rgba(10, 132, 255, .30);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="liquid-glass"] .send-btn:hover {
+  background-color: rgba(10, 132, 255, .92);
+  border-color: rgba(255, 255, 255, .62);
+  box-shadow: var(--lg-edge-glow), 0 6px 20px rgba(10, 132, 255, .38);
+}
+html[data-theme="liquid-glass"] .send-btn:disabled { opacity: .5; }
+
+/* --------------------------------------------------------------------------
+   6. 弹窗 / 浮层
+   -------------------------------------------------------------------------- */
+html[data-theme="liquid-glass"] .modal-overlay,
+html[data-theme="liquid-glass"] .conversation-manage-overlay {
+  background: rgba(18, 22, 38, .26);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+html[data-theme="liquid-glass"] .modal,
+html[data-theme="liquid-glass"] .conversation-manage-sheet,
+html[data-theme="liquid-glass"] .app-dialog {
+  background-color: var(--lg-fill-solid);
+  border: 1px solid rgba(255, 255, 255, .38);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-edge), var(--lg-shadow-lg);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+}
+html[data-theme="liquid-glass"] .modal-header,
+html[data-theme="liquid-glass"] .logs-header,
+html[data-theme="liquid-glass"] .modal-actions { border-color: var(--lg-stroke-soft); }
+
+html[data-theme="liquid-glass"] .cs-panel {
+  background-color: var(--lg-fill-solid);
+  border: 1px solid rgba(255, 255, 255, .38);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-edge), var(--lg-shadow-lg);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+}
+html[data-theme="liquid-glass"] .cs-option { border-radius: var(--lg-radius-sm); }
+html[data-theme="liquid-glass"] .cs-option:hover { background: rgba(255, 255, 255, .38); }
+html[data-theme="liquid-glass"] .cs-option.is-selected {
+  background: rgba(10, 132, 255, .20);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55);
+}
+
+/* --------------------------------------------------------------------------
+   7. 表单控件
+   -------------------------------------------------------------------------- */
+/* ⚠️ textarea 要排除 #userInput：主输入框是「胶囊 + 内嵌透明 textarea」的结构，
+   再给它套一层背景/边框/圆角就会在胶囊里多出一个很难看的小方块。 */
+html[data-theme="liquid-glass"] input:not([type="checkbox"]):not([type="radio"]),
+html[data-theme="liquid-glass"] textarea:not(#userInput),
+html[data-theme="liquid-glass"] select,
+html[data-theme="liquid-glass"] .data-center-editor,
+html[data-theme="liquid-glass"] .agent-detail-editor {
+  background-color: var(--lg-fill-thin);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-sm);
+  color: var(--text);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+html[data-theme="liquid-glass"] input::placeholder,
+html[data-theme="liquid-glass"] textarea::placeholder { color: rgba(70, 78, 92, .66); }
+
+html[data-theme="liquid-glass"] .btn {
+  background-color: var(--lg-fill);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-pill);
+  color: var(--text);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="liquid-glass"] .btn:hover {
+  background-color: var(--lg-fill-strong);
+  box-shadow: var(--lg-edge);
+}
+html[data-theme="liquid-glass"] .btn-danger,
+html[data-theme="liquid-glass"] .btn.danger { color: var(--danger); }
+html[data-theme="liquid-glass"] .icon-btn {
+  background-color: var(--lg-fill-thin);
+  border: 1px solid transparent;
+  border-radius: var(--lg-radius-pill);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="liquid-glass"] .checkbox-label input[type="checkbox"],
+html[data-theme="liquid-glass"] .agent-item input[type="checkbox"] { border-color: var(--lg-stroke); }
+
+/* --------------------------------------------------------------------------
+   8. 横排选择 → 胶囊
+   -------------------------------------------------------------------------- */
+/* 创作工作台顶部的横排选择：一条玻璃胶囊，选中项是浮起的药丸 */
+html[data-theme="liquid-glass"] .agent-detail-tabs {
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-pill);
+  background-color: var(--lg-fill-thin);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html[data-theme="liquid-glass"] .agent-detail-tabs::-webkit-scrollbar { display: none; }
+html[data-theme="liquid-glass"] .agent-detail-tab {
+  min-height: 30px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: var(--lg-radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+html[data-theme="liquid-glass"] .agent-detail-tab:hover {
+  background-color: var(--lg-fill-soft, rgba(255, 255, 255, .14));
+  color: var(--text);
+}
+html[data-theme="liquid-glass"] .agent-detail-tab.active {
+  background-color: rgba(255, 255, 255, .46);
+  background-image: linear-gradient(150deg, rgba(255, 255, 255, .54), rgba(255, 255, 255, .32));
+  border-color: rgba(255, 255, 255, .42);
+  color: #0a58c2;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 3px 12px rgba(31, 38, 135, .14);
+}
+
+/* 这一行是块状容器（两行内容），用与 .param-group 相同的 24px 方块圆角，
+   不要用胶囊 —— 胶囊在大尺寸块上会显得很怪。 */
+html[data-theme="liquid-glass"] .reading-settings-row {
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius);
+  background-color: var(--lg-fill-thin);
+  box-shadow: var(--lg-edge-soft);
+  padding: 8px 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+html[data-theme="liquid-glass"] .reading-control select {
+  border-radius: var(--lg-radius-sm);
+  padding-left: 12px;
+}
+/* 侧栏底部整片统一成 15px（与旁边两个下拉一致）：这一组按钮原来和输入控件一样
+   被写成胶囊，和下拉并排看就是「一个圆一个方」。弹窗里的按钮保持胶囊（那是另一种语境）。 */
+html[data-theme="liquid-glass"] .data-actions .btn,
+html[data-theme="liquid-glass"] .new-chat-btn,
+html[data-theme="liquid-glass"] .sidebar-footer select,
+html[data-theme="liquid-glass"] .sidebar-footer .btn { border-radius: var(--lg-radius-sm); }
+html[data-theme="liquid-glass"] .panel-inline-actions .btn,
+html[data-theme="liquid-glass"] .modal-actions .btn { border-radius: var(--lg-radius-pill); }
+
+html[data-theme="liquid-glass"] .param-card-stack > .param-group,
+html[data-theme="liquid-glass"] .agent-compact-card,
+html[data-theme="liquid-glass"] .agent-context-switches,
+html[data-theme="liquid-glass"] .gemini-safety-section,
+html[data-theme="liquid-glass"] .data-center-section,
+html[data-theme="liquid-glass"] .data-center-location {
+  background-color: var(--lg-fill);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+html[data-theme="liquid-glass"] .theme-card,
+html[data-theme="liquid-glass"] .config-card,
+html[data-theme="liquid-glass"] .agent-item,
+html[data-theme="liquid-glass"] .data-snapshot-item {
+  background-color: var(--lg-fill-thin);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-sm);
+  box-shadow: var(--lg-edge-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="liquid-glass"] .theme-card:hover,
+html[data-theme="liquid-glass"] .config-card:hover { background-color: var(--lg-fill); }
+
+html[data-theme="liquid-glass"] .think-block,
+html[data-theme="liquid-glass"] .discussion-think {
+  background-color: var(--think-bg);
+  border: 1px solid var(--think-border);
+  border-radius: var(--lg-radius-sm);
+  box-shadow: var(--lg-edge-soft);
+}
+html[data-theme="liquid-glass"] pre {
+  background-color: var(--code-bg);
+  border: 1px solid var(--lg-stroke-soft);
+  border-radius: var(--lg-radius-sm);
+}
+
+html[data-theme="liquid-glass"] .discussion-composer textarea,
+html[data-theme="liquid-glass"] .discussion-detail-composer textarea {
+  border-radius: var(--lg-radius);
+  background-color: var(--lg-fill-strong);
+  border: 1px solid var(--lg-stroke);
+}
+html[data-theme="liquid-glass"] .discussion-composer .btn,
+html[data-theme="liquid-glass"] .discussion-send { border-radius: var(--lg-radius-pill); }
+
+/* --------------------------------------------------------------------------
+   9. 表面渐变层 + 悬停时边框发光
+   --------------------------------------------------------------------------
+   这里只负责各个玻璃面的「斜向渐变（厚薄）/ 拉丝纹理」层。
+   注意：不要再做「跟随鼠标的光斑」—— 触屏上点一下会留下一个不会移动的光球，
+   而且用户要的本来就是「鼠标移到 UI 上、边框亮起来」这种悬停反馈（见本节末尾）。 */
+html[data-theme="liquid-glass"] .sidebar,
+html[data-theme="liquid-glass"] .right-panel,
+html[data-theme="liquid-glass"] .top-bar,
+html[data-theme="liquid-glass"] .modal,
+html[data-theme="liquid-glass"] .conversation-manage-sheet,
+html[data-theme="liquid-glass"] .app-dialog,
+html[data-theme="liquid-glass"] .cs-panel {
+  background-image:
+    var(--lg-sheen);
+}
+
+html[data-theme="liquid-glass"] .input-wrapper,
+html[data-theme="liquid-glass"] .param-card-stack > .param-group,
+html[data-theme="liquid-glass"] .agent-compact-card,
+html[data-theme="liquid-glass"] .agent-context-switches,
+html[data-theme="liquid-glass"] .gemini-safety-section,
+html[data-theme="liquid-glass"] .data-center-section,
+html[data-theme="liquid-glass"] .data-center-location {
+  background-image:
+    var(--lg-sheen);
+}
+
+html[data-theme="liquid-glass"] .theme-card,
+html[data-theme="liquid-glass"] .config-card,
+html[data-theme="liquid-glass"] .agent-item,
+html[data-theme="liquid-glass"] .data-snapshot-item,
+html[data-theme="liquid-glass"] .reading-settings-row,
+html[data-theme="liquid-glass"] .agent-detail-tabs,
+html[data-theme="liquid-glass"] .think-block,
+html[data-theme="liquid-glass"] .discussion-think,
+html[data-theme="liquid-glass"] .panel-tabs,
+html[data-theme="liquid-glass"] .search-box input,
+html[data-theme="liquid-glass"] .sidebar-footer,
+html[data-theme="liquid-glass"] .conv-item.active,
+html[data-theme="liquid-glass"] .discussion-composer textarea,
+html[data-theme="liquid-glass"] .discussion-detail-composer textarea {
+  background-image:
+    var(--lg-sheen-soft);
+}
+
+html[data-theme="liquid-glass"] input:not([type="checkbox"]):not([type="radio"]),
+html[data-theme="liquid-glass"] textarea:not(#userInput),
+html[data-theme="liquid-glass"] select,
+html[data-theme="liquid-glass"] .data-center-editor,
+html[data-theme="liquid-glass"] .agent-detail-editor,
+html[data-theme="liquid-glass"] .btn,
+html[data-theme="liquid-glass"] .icon-btn {
+  background-image:
+    var(--lg-sheen-soft);
+}
+
+/* 消息气泡各自叠自己的底色渐变 */
+html[data-theme="liquid-glass"] .msg.ai {
+  background-image:
+    var(--lg-sheen);
+}
+html[data-theme="liquid-glass"] .msg.user {
+  /* ⚠️ 这里原来是一条 150° 的蓝紫渐变（.46 的不透明度），视觉上就是一块实心色块 ——
+     和满屏的玻璃面板完全不搭。改成和面板同一套「厚薄」渐变，只保留淡淡蓝调。 */
+  background-image:
+    var(--lg-sheen-soft);
+}
+
+/* ---- 悬停 / 聚焦：边框亮起 + 一圈柔光 ----
+   这就是用户要的「移到 UI 上，边框发光」。用纯 CSS 的 :hover 实现，
+   桌面和触屏一致（触屏没有 hover，靠下面的 :active 补按下的反馈）。 */
+html[data-theme="liquid-glass"] .sidebar:hover,
+html[data-theme="liquid-glass"] .right-panel:hover,
+html[data-theme="liquid-glass"] .top-bar:hover,
+html[data-theme="liquid-glass"] .input-wrapper:hover,
+html[data-theme="liquid-glass"] .input-wrapper:focus-within,
+html[data-theme="liquid-glass"] .modal:hover,
+html[data-theme="liquid-glass"] .app-dialog:hover,
+html[data-theme="liquid-glass"] .conversation-manage-sheet:hover,
+html[data-theme="liquid-glass"] .cs-panel:hover,
+html[data-theme="liquid-glass"] .msg:hover,
+html[data-theme="liquid-glass"] .param-card-stack > .param-group:hover,
+html[data-theme="liquid-glass"] .agent-compact-card:hover,
+html[data-theme="liquid-glass"] .agent-context-switches:hover,
+html[data-theme="liquid-glass"] .gemini-safety-section:hover,
+html[data-theme="liquid-glass"] .data-center-section:hover,
+html[data-theme="liquid-glass"] .data-center-location:hover,
+html[data-theme="liquid-glass"] .reading-settings-row:hover,
+html[data-theme="liquid-glass"] .think-block:hover,
+html[data-theme="liquid-glass"] .theme-card:hover,
+html[data-theme="liquid-glass"] .config-card:hover,
+html[data-theme="liquid-glass"] .agent-item:hover,
+html[data-theme="liquid-glass"] .data-snapshot-item:hover,
+html[data-theme="liquid-glass"] .panel-tabs:hover,
+html[data-theme="liquid-glass"] .agent-detail-tabs:hover,
+html[data-theme="liquid-glass"] .btn:hover,
+html[data-theme="liquid-glass"] .icon-btn:hover,
+html[data-theme="liquid-glass"] .conv-item:hover,
+html[data-theme="liquid-glass"] .panel-tab:hover,
+html[data-theme="liquid-glass"] .agent-detail-tab:hover,
+html[data-theme="liquid-glass"] .cs-option:hover,
+html[data-theme="liquid-glass"] .search-box input:hover,
+html[data-theme="liquid-glass"] .action-row .action-btn:hover,
+html[data-theme="liquid-glass"] input:not([type="checkbox"]):not([type="radio"]):hover,
+html[data-theme="liquid-glass"] textarea:not(#userInput):hover,
+html[data-theme="liquid-glass"] select:hover {
+  border-color: rgba(255, 255, 255, .45);
+  box-shadow: var(--lg-edge-glow);
+}
+/* 选中的会话项、按下的按钮：保持发光（触屏上只有按下这一刻能给出反馈） */
+html[data-theme="liquid-glass"] .conv-item.active,
+html[data-theme="liquid-glass"] .panel-tab.active,
+html[data-theme="liquid-glass"] .btn:active,
+html[data-theme="liquid-glass"] .icon-btn:active,
+html[data-theme="liquid-glass"] .action-row .action-btn:active,
+html[data-theme="liquid-glass"] .cs-option.is-selected {
+  border-color: rgba(255, 255, 255, .55);
+  box-shadow: var(--lg-edge-glow);
+}
+
+/* --------------------------------------------------------------------------
+   10. 浮动面板 + 左右滑动（桌面）
+   --------------------------------------------------------------------------
+   两侧栏改成「脱离文档流、固定在窗口左右、整块平移进出」的浮动玻璃板：
+   收起时整块滑出窗口，而不是把宽度压扁成一团。因为脱离了文档流，
+   内容区必须靠 padding 自己让位，收起时要收回去（状态由 html 上的
+   lg-left-collapsed / lg-right-collapsed 提供，见 main.js 的
+   syncLiquidGlassPanelState()）。
+   顶栏也做成同款圆角浮板 —— 之前顶栏是直角、侧栏是圆角，并排看着很突兀。 */
+@media (min-width: 769px) {
+  html[data-theme="liquid-glass"] .sidebar,
+  html[data-theme="liquid-glass"] .right-panel {
+    position: fixed;
+    top: var(--lg-panel-inset);
+    bottom: var(--lg-panel-inset);
+    height: auto;
+    min-width: 0;
+    margin: 0;
+    z-index: 70;
+    transform: translateX(0);
+    transition: transform var(--motion-normal) var(--ease-standard), opacity var(--motion-normal) var(--ease-standard);
+  }
+  html[data-theme="liquid-glass"] .sidebar { left: var(--lg-panel-inset); width: var(--sidebar-width); }
+  html[data-theme="liquid-glass"] .right-panel { right: var(--lg-panel-inset); width: var(--inspector-width); }
+
+  /* 收起 = 整块滑出窗口（保持宽度） */
+  html[data-theme="liquid-glass"] .sidebar.collapsed {
+    width: var(--sidebar-width);
+    min-width: 0;
+    transform: translateX(calc(-100% - var(--lg-panel-inset) * 2));
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  html[data-theme="liquid-glass"] .right-panel.collapsed {
+    width: var(--inspector-width);
+    min-width: 0;
+    transform: translateX(calc(100% + var(--lg-panel-inset) * 2));
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  /* 内容区给两侧让位；收起时归位 */
+  html[data-theme="liquid-glass"] .main {
+    padding-left: calc(var(--sidebar-width) + var(--lg-panel-inset));
+    padding-right: calc(var(--inspector-width) + var(--lg-panel-inset));
+    transition: padding-left var(--motion-normal) var(--ease-standard), padding-right var(--motion-normal) var(--ease-standard);
+  }
+  html[data-theme="liquid-glass"].lg-left-collapsed .main { padding-left: 0; }
+  html[data-theme="liquid-glass"].lg-right-collapsed .main { padding-right: 0; }
+
+  /* 顶栏：与侧栏一致的浮动圆角玻璃条 */
+  html[data-theme="liquid-glass"] .top-bar {
+    margin: var(--lg-panel-inset) var(--lg-panel-inset) 0;
+    border: 1px solid var(--lg-stroke-soft);
+    border-radius: var(--lg-radius);
+    box-shadow: var(--lg-edge-soft), var(--lg-shadow-float);
+  }
+  /* 输入区底部也留出同样的边距，别顶着窗口下沿 */
+  html[data-theme="liquid-glass"] .input-area { padding-bottom: calc(18px + var(--lg-panel-inset)); }
+}
+
+/* --------------------------------------------------------------------------
+   11. 滚动条
+   -------------------------------------------------------------------------- */
+html[data-theme="liquid-glass"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+html[data-theme="liquid-glass"] ::-webkit-scrollbar-track { background: transparent; }
+html[data-theme="liquid-glass"] ::-webkit-scrollbar-thumb {
+  background: rgba(90, 100, 120, .30);
+  border-radius: 999px;
+}
+html[data-theme="liquid-glass"] ::-webkit-scrollbar-thumb:hover { background: rgba(90, 100, 120, .46); }
+
+/* --------------------------------------------------------------------------
+   12. 移动端
+   --------------------------------------------------------------------------
+   手机上侧栏是抽屉（position: fixed），不做浮动内缩，只把圆角收一档、
+   模糊半径降一档，省电也省算力。 */
+@media (max-width: 768px) {
+  html[data-theme="liquid-glass"] {
+    --lg-blur: 7px;
+    --lg-radius: 20px;
+  }
+  html[data-theme="liquid-glass"] .sidebar {
+    border-right: 1px solid var(--lg-stroke-soft);
+    border-radius: 0 var(--lg-radius) var(--lg-radius) 0;
+    box-shadow: var(--lg-edge-soft), var(--lg-shadow-float);
+  }
+  html[data-theme="liquid-glass"] .sidebar-overlay { background: rgba(18, 22, 38, .28); }
+  html[data-theme="liquid-glass"] .agent-detail-tab { padding: 0 12px; }
+  html[data-theme="liquid-glass"] .modal,
+  html[data-theme="liquid-glass"] .app-dialog,
+  html[data-theme="liquid-glass"] .cs-panel { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+}

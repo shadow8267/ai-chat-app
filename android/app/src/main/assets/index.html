@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AI Chat</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a84ff'/%3E%3Ctext x='32' y='45' font-size='36' font-family='system-ui,sans-serif' font-weight='600' fill='%23fff' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css?v=109">
+<link rel="stylesheet" href="css/themes/original.css" id="theme-original" disabled>
+<link rel="stylesheet" href="css/themes/current.css" id="theme-current">
+<link rel="stylesheet" href="css/themes/linear.css" id="theme-linear" disabled>
+<link rel="stylesheet" href="css/themes/liquid-glass.css?v=13" id="theme-liquid-glass" disabled>
+</head>
+<body>
+
+<!-- Sidebar overlay (mobile) -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<div class="conversation-manage-overlay" id="conversationManageOverlay" aria-hidden="true">
+  <div class="conversation-manage-sheet" role="dialog" aria-modal="true" aria-labelledby="conversationManageTitle">
+    <div class="conversation-manage-heading">管理对话</div>
+    <div class="conversation-manage-title" id="conversationManageTitle"></div>
+    <button class="conversation-manage-action" id="conversationManageRenameBtn" type="button">重命名</button>
+    <button class="conversation-manage-action danger" id="conversationManageDeleteBtn" type="button">删除对话</button>
+    <button class="conversation-manage-action cancel" id="conversationManageCancelBtn" type="button">取消</button>
+  </div>
+</div>
+
+<!-- ====== SIDEBAR ====== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo"><span>AI</span> Chat</div>
+    <div class="sidebar-actions">
+      <button class="icon-btn" id="themeBtn" type="button" title="主题外观" aria-label="主题外观">◐</button>
+      <button class="icon-btn" id="settingsBtn" type="button" title="配置管理" aria-label="配置管理">&#9881;</button>
+      <button class="icon-btn" id="syncBtn" type="button" title="局域网同步" aria-label="局域网同步">&#8644;</button>
+      <button class="icon-btn mobile-only-control" id="sidebarCloseBtn" type="button" title="关闭会话列表" aria-label="关闭会话列表">&#10005;</button>
+    </div>
+  </div>
+
+  <button class="new-chat-btn" id="newChatBtn">+ 新对话</button>
+
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="搜索对话...">
+  </div>
+
+  <nav class="conversation-list" id="convList"></nav>
+
+  <div class="sidebar-footer">
+    <div class="api-model-row">
+      <select id="configSelect" title="切换API配置"></select>
+      <select class="model-select" id="modelSelect" title="切换模型"></select>
+    </div>
+    <div class="data-actions">
+      <button class="btn btn-ghost btn-sm" id="exportBtn">导出全部</button>
+      <button class="btn btn-ghost btn-sm" id="importBtn">导入数据</button>
+      <button class="btn btn-ghost btn-sm" id="dataCenterBtn" title="查看和管理本地数据">数据中心</button>
+    </div>
+    <input class="visually-hidden" type="file" id="importFile" accept=".json">
+    <div class="status-info">
+      <span class="status-dot ok" id="statusDot"></span>
+      <span id="statusText">就绪</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ====== MAIN ====== -->
+<main class="main">
+  <!-- Top bar -->
+  <header class="top-bar">
+    <button class="collapse-toggle panel-collapse-btn" id="collapseLeft" type="button" title="打开会话列表" aria-label="打开会话列表">&#9776;</button>
+    <span class="conv-title-display" id="convTitleDisplay">新对话</span>
+    <span class="spacer"></span>
+    <button class="collapse-toggle app-icon-button" id="logsBtn" type="button" title="查看运行日志" aria-label="查看运行日志"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg></button>
+    <button class="collapse-toggle panel-collapse-btn" id="collapseRight" type="button" title="打开上下文工作区" aria-label="打开上下文工作区">&#9776;</button>
+  </header>
+
+  <!-- Chat area -->
+  <section class="chat-scroll" id="chatScroll">
+    <div class="chat-inner" id="chatInner"></div>
+  </section>
+
+  <!-- Input -->
+  <footer class="input-area">
+    <!-- 「我的消息」快速定位：有 2 条以上自己发的消息时才出现，随手点即可跳 -->
+    <div class="mine-nav" id="mineNav" hidden>
+      <button class="mine-nav-btn" id="mineNavUp" type="button" title="上一条我的消息" aria-label="上一条我的消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg></button>
+      <span class="mine-nav-count" id="mineNavCount">·/·</span>
+      <button class="mine-nav-btn" id="mineNavDown" type="button" title="下一条我的消息" aria-label="下一条我的消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="m6 13 6 6 6-6"></path></svg></button>
+    </div>
+    <div class="input-wrapper">
+      <textarea id="userInput" placeholder="输入消息..." rows="1"></textarea>
+      <button class="send-btn" id="sendBtn" title="发送"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></button>
+    </div>
+  </footer>
+</main>
+
+<!-- ====== RIGHT PANEL ====== -->
+<aside class="right-panel" id="rightPanel">
+  <div class="panel-header">
+    <div class="panel-header-main">
+      <span class="panel-eyebrow">上下文工作区</span>
+      <span class="panel-title" id="rightPanelTitle">生成参数</span>
+      <div class="panel-tabs" role="tablist" aria-label="上下文工作区页面">
+        <button class="panel-tab active" id="paramsPageTab" type="button" role="tab" aria-controls="paramsPage" aria-selected="true">参数</button>
+        <button class="panel-tab" id="discussionPageTab" type="button" role="tab" aria-controls="discussionPage" aria-selected="false">讨论</button>
+        <button class="panel-tab" id="agentPageTab" type="button" role="tab" aria-controls="agentPage" aria-selected="false">创作</button>
+      </div>
+    </div>
+    <button class="icon-btn" id="rightPanelCloseBtn" type="button" title="关闭工作区" aria-label="关闭工作区">&#10005;</button>
+  </div>
+  <div class="panel-body">
+    <section class="panel-page active" id="paramsPage" role="tabpanel" aria-labelledby="paramsPageTab">
+      <div class="panel-intro">
+        <strong>生成参数</strong>
+        <span>调整当前会话的模型输出方式。</span>
+      </div>
+      <div class="param-card-stack">
+        <div class="param-group">
+          <label class="param-label">思考强度 <span class="param-value" id="reasoningEffortValue" title="发送给模型的 reasoning_effort 值">(自动)</span></label>
+          <select id="reasoningEffort" class="param-select">
+            <option value="">自动（不指定）</option>
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+            <option value="max">最高</option>
+          </select>
+          <div class="param-hint">仅支持 reasoning_effort 的模型生效</div>
+        </div>
+        <div class="param-group">
+          <label class="param-label">Temperature <span class="param-value" id="tempValue" title="点击手动输入">0.7</span></label>
+          <input type="range" id="temperature" min="0.01" max="2" step="0.01" value="0.7">
+          <div class="param-hint">低值更稳定，高值更开放</div>
+        </div>
+        <div class="param-group">
+          <label class="param-label">Top P <span class="param-value" id="topPValue" title="点击手动输入">1.0</span></label>
+          <input type="range" id="topP" min="0.05" max="1" step="0.05" value="1">
+          <div class="param-hint">控制候选词采样范围</div>
+        </div>
+        <div class="param-group gemini-only-setting" id="topKSetting" hidden>
+          <label class="param-label">Top K <span class="param-value" id="topKValue" title="点击手动输入">40</span></label>
+          <input type="range" id="topK" min="1" max="100" step="1" value="40">
+          <div class="param-hint">Gemini 专用候选词范围</div>
+        </div>
+        <div class="param-group">
+          <label class="param-label">最大 Tokens <span class="param-value" id="maxTokensValue" title="点击手动输入">4096</span></label>
+          <input type="range" id="maxTokens" min="64" max="32768" step="64" value="4096">
+          <div class="param-hint">限制单次回复长度</div>
+        </div>
+      </div>
+      <section class="gemini-safety-section gemini-only-setting" id="geminiSafetySection" aria-label="Gemini 安全设置" hidden>
+        <div class="param-label">Gemini 安全设置</div>
+        <div class="param-hint">调整内容拦截阈值，不会绕过平台或法律限制。</div>
+        <div class="gemini-safety-grid">
+          <label>仇恨言论<select id="safetyHateSpeech" class="param-select"><option value="default">默认</option><option value="block_low">低及以上拦截</option><option value="block_medium">中及以上拦截</option><option value="block_only_high">仅高风险拦截</option><option value="off">关闭该项</option></select></label>
+          <label>骚扰<select id="safetyHarassment" class="param-select"><option value="default">默认</option><option value="block_low">低及以上拦截</option><option value="block_medium">中及以上拦截</option><option value="block_only_high">仅高风险拦截</option><option value="off">关闭该项</option></select></label>
+          <label>危险内容<select id="safetyDangerous" class="param-select"><option value="default">默认</option><option value="block_low">低及以上拦截</option><option value="block_medium">中及以上拦截</option><option value="block_only_high">仅高风险拦截</option><option value="off">关闭该项</option></select></label>
+          <label>露骨内容<select id="safetySexual" class="param-select"><option value="default">默认</option><option value="block_low">低及以上拦截</option><option value="block_medium">中及以上拦截</option><option value="block_only_high">仅高风险拦截</option><option value="off">关闭该项</option></select></label>
+        </div>
+      </section>
+      <div class="panel-inline-actions">
+        <button class="btn btn-ghost btn-sm" id="resetParamsBtn" type="button">恢复默认</button>
+      </div>
+      <section class="system-prompt-section" aria-label="系统提示词设置">
+        <div class="system-prompt-summary">
+          <div>
+            <div class="param-label">系统提示词</div>
+            <div class="param-hint" id="systemPromptSummary">未启用</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="openSystemPromptBtn" type="button">设置</button>
+        </div>
+      </section>
+      <div class="reading-settings-row">
+        <span class="reading-settings-label">阅读显示</span>
+        <label class="reading-control">字号
+          <select id="mainFontSize" aria-label="正文和详情字号">
+            <option value="15">小</option>
+            <option value="16">标准</option>
+            <option value="18">大</option>
+            <option value="20">特大</option>
+          </select>
+        </label>
+        <label class="reading-control">行距
+          <select id="mainLineHeight" aria-label="正文和详情行距">
+            <option value="1.6">紧凑</option>
+            <option value="1.85">舒适</option>
+            <option value="2.1">宽松</option>
+          </select>
+        </label>
+        <label class="reading-control">思考
+          <select id="showThinking" aria-label="是否显示思考内容">
+            <option value="1">显示</option>
+            <option value="0">隐藏</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel-page discussion-page" id="discussionPage" role="tabpanel" aria-labelledby="discussionPageTab">
+      <div class="panel-intro">
+        <strong>聊聊当前对话</strong>
+        <span>独立讨论，不写入正文，也不读取创作工作台资料。</span>
+      </div>
+      <section class="discussion-section" aria-label="当前对话讨论">
+        <div class="discussion-heading">
+          <div>
+            <div class="discussion-title">讨论记录</div>
+            <div class="discussion-hint">适合分析剧情、人物和设定</div>
+          </div>
+          <button class="icon-btn discussion-detail-btn" id="openDiscussionDetailBtn" type="button" title="打开讨论详情" aria-label="打开讨论详情">↗</button>
+        </div>
+        <div class="discussion-list" id="discussionList">
+          <div class="discussion-empty">还没有讨论。可以先问问 AI 对当前对话的看法。</div>
+        </div>
+        <div class="discussion-composer">
+          <textarea id="discussionInput" rows="3" placeholder="输入想讨论的内容…"></textarea>
+          <button class="btn btn-sm discussion-send" id="discussionSendBtn" type="button">发送</button>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel-page agent-page agent-page-compact" id="agentPage" role="tabpanel" aria-labelledby="agentPageTab">
+      <div class="panel-intro">
+        <strong>创作工作台</strong>
+        <span>工作台始终可用；你可以选择让主页正文读取世界观或作品记忆，讨论仍保持隔离。</span>
+      </div>
+      <div class="agent-context-switches" aria-label="主页正文创作资料">
+        <label class="agent-context-switch">
+          <span><strong>世界观应用到主页</strong><small>普通生成、重新生成和修订均会读取</small></span>
+          <input type="checkbox" id="agentApplyWorldviewToMain">
+        </label>
+        <label class="agent-context-switch">
+          <span><strong>作品记忆应用到主页</strong><small>只注入已保存的作品记忆，不包含长期规则和风格模板</small></span>
+          <input type="checkbox" id="agentApplyMemoryToMain">
+        </label>
+        <div class="param-hint" id="agentContextSwitchHint">两个开关均关闭，主页正文只使用自身对话和已启用的主页系统提示词。</div>
+      </div>
+      <div class="agent-compact-card">
+        <div class="agent-compact-card-title">资料与续写</div>
+        <div class="agent-compact-summary" id="agentCompactSummary">管理世界观、作品记忆和写作规则，生成可确认的续写草稿。</div>
+        <button class="btn btn-sm" id="openAgentDetailBtn" type="button">进入创作工作台</button>
+      </div>
+    </section>
+  </div>
+</aside>
+
+<!-- ====== DISCUSSION DETAIL MODAL ====== -->
+<div class="modal-overlay" id="discussionDetailModal">
+  <div class="modal discussion-detail-modal">
+    <div class="logs-header discussion-detail-header">
+      <div>
+        <h3>当前对话详情</h3>
+        <p id="discussionDetailTitle">不写入正文，可讨论剧情、人物和设定。</p>
+      </div>
+        <div class="discussion-detail-tools">
+        <button class="icon-btn" id="closeDiscussionDetailBtn" title="关闭" aria-label="关闭">&#10005;</button>
+      </div>
+    </div>
+    <div class="discussion-detail-body reading-content" id="discussionDetailList"></div>
+    <div class="discussion-detail-composer">
+      <textarea id="discussionDetailInput" rows="3" placeholder="输入你想讨论的内容...（Ctrl+Enter 发送，Enter 换行）"></textarea>
+      <button class="btn discussion-send" id="discussionDetailSendBtn">发送讨论</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== AGENT DETAIL MODAL ====== -->
+<div class="modal-overlay" id="agentDetailModal">
+  <div class="modal agent-detail-modal">
+    <div class="logs-header agent-detail-header">
+      <div>
+        <h3>创作工作台</h3>
+        <p id="agentDetailTitle">使用世界观与作品记忆生成可确认的续写草稿。</p>
+      </div>
+      <button class="icon-btn" id="closeAgentDetailBtn" title="关闭" aria-label="关闭">&#10005;</button>
+    </div>
+    <div class="agent-detail-body">
+      <div class="agent-detail-tabs" role="tablist" aria-label="创作工作台模块">
+        <button class="agent-detail-tab active" id="agentDetailTabOverview" type="button" role="tab" aria-selected="true" data-agent-detail-tab="overview">总览</button>
+        <button class="agent-detail-tab" id="agentDetailTabKnowledge" type="button" role="tab" aria-selected="false" data-agent-detail-tab="knowledge">资料与规则</button>
+        <button class="agent-detail-tab" id="agentDetailTabWriting" type="button" role="tab" aria-selected="false" data-agent-detail-tab="writing">续写</button>
+        <button class="agent-detail-tab" id="agentDetailTabReview" type="button" role="tab" aria-selected="false" data-agent-detail-tab="review">记忆候选</button>
+      </div>
+      <div class="agent-detail-panels">
+        <section class="agent-detail-panel" data-agent-detail-panel="overview" role="tabpanel" aria-labelledby="agentDetailTabOverview">
+          <div class="agent-detail-overview-grid">
+            <div class="agent-detail-overview-card"><span>世界观</span><strong id="agentDetailOverviewWorldviewSummary">尚未填写</strong></div>
+            <div class="agent-detail-overview-card"><span>作品记忆</span><strong id="agentDetailOverviewMemorySummary">尚未填写</strong></div>
+          </div>
+          <div class="agent-detail-overview-actions">
+            <button class="btn btn-sm" type="button" data-agent-open-tab="writing">开始续写</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-agent-open-tab="knowledge">编辑资料与规则</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-agent-open-tab="review">查看记忆候选</button>
+          </div>
+        </section>
+        <section class="agent-detail-panel" data-agent-detail-panel="knowledge" role="tabpanel" aria-labelledby="agentDetailTabKnowledge">
+      <div class="agent-detail-section agent-detail-main-context-section">
+        <div class="agent-detail-section-heading"><strong>主页正文资料</strong><span class="param-hint">与侧边栏同步</span></div>
+        <div class="agent-context-switches agent-detail-context-switches">
+          <label class="agent-context-switch">
+            <span><strong>世界观应用到主页</strong><small>作为系统级参考资料发送给主页正文模型</small></span>
+            <input type="checkbox" id="agentDetailApplyWorldviewToMain">
+          </label>
+          <label class="agent-context-switch">
+            <span><strong>作品记忆应用到主页</strong><small>作为系统级事实参考发送给主页正文模型</small></span>
+            <input type="checkbox" id="agentDetailApplyMemoryToMain">
+          </label>
+        </div>
+        <div class="param-hint" id="agentDetailContextSwitchHint">创作工作台始终使用世界观、作品记忆及已启用的提示词；当前对话讨论不会读取这些资料。</div>
+      </div>
+      <div class="agent-detail-section agent-detail-worldview-section">
+        <div class="agent-detail-section-heading"><strong>世界观</strong><span class="param-hint" id="agentDetailWorldviewSummary">尚未填写</span></div>
+        <div class="agent-step-hint">保存稳定的世界规则、地理、势力与历史背景。</div>
+        <textarea id="agentDetailWorldview" class="agent-detail-editor agent-detail-worldview" rows="10" placeholder="# 世界基础&#10;&#10;## 力量体系&#10;- ……&#10;&#10;## 地理与势力&#10;- ……"></textarea>
+        <div class="agent-actions">
+          <button class="btn btn-ghost btn-sm" id="agentDetailSaveWorldviewBtn" type="button">确认当前版本</button>
+        </div>
+        <div class="agent-worldview-ai-box">
+          <div class="agent-detail-section-heading"><strong>AI 辅助整理世界观</strong><span class="param-hint">不会自动覆盖，请确认后应用</span></div>
+          <div class="agent-worldview-operation-row">
+            <label class="param-label" for="agentWorldviewOperation">处理方式</label>
+            <select id="agentWorldviewOperation" class="param-select">
+              <option value="整理并提出补充建议">整理并提出补充建议</option>
+              <option value="只整理和合并重复内容">只整理和合并重复内容</option>
+              <option value="按作者要求删改">按作者要求删改</option>
+              <option value="检查规则之间是否冲突">检查规则之间是否冲突</option>
+            </select>
+          </div>
+          <textarea id="agentDetailWorldviewInstruction" class="agent-detail-editor" rows="3" placeholder="例如：把魔法规则、代价和限制单独整理；删除与当前设定冲突的旧规则；补充一个能解释阶级差异的社会影响，但标记为建议补充。"></textarea>
+          <div class="agent-actions">
+            <button class="btn btn-sm" id="agentDetailOrganizeWorldviewBtn" type="button">生成整理结果</button>
+            <button class="btn btn-sm" id="agentDetailApplyWorldviewBtn" type="button" disabled>应用到世界观</button>
+            <button class="btn btn-ghost btn-sm" id="agentDetailClearWorldviewResultBtn" type="button">清除结果</button>
+          </div>
+          <textarea id="agentDetailWorldviewResult" class="agent-detail-editor agent-detail-worldview-result" rows="10" placeholder="AI 整理结果会显示在这里，你可以先手动修改，再应用到世界观。"></textarea>
+          <span class="agent-action-status" id="agentDetailWorldviewStatus" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="agent-detail-section agent-detail-memory-section">
+        <div class="agent-detail-section-heading"><strong>作品记忆</strong><span class="param-hint" id="agentDetailMemorySummary">尚未填写</span></div>
+        <textarea id="agentDetailMemory" class="agent-detail-editor agent-detail-memory" rows="8" placeholder="# 人物设定&#10;&#10;# 当前剧情&#10;&#10;# 写作注意事项"></textarea>
+        <div class="agent-memory-ai-box">
+          <div class="agent-detail-section-heading"><strong>AI 定向补充记忆</strong><span class="param-hint">你指明添加什么，AI 就只处理什么</span></div>
+          <div class="agent-worldview-operation-row">
+            <label class="param-label" for="agentMemoryOperation">处理方式</label>
+            <select id="agentMemoryOperation" class="param-select">
+              <option value="补充指定内容">补充指定内容</option>
+              <option value="按要求修改已有内容">按要求修改已有内容</option>
+              <option value="按要求删除已有内容">按要求删除已有内容</option>
+              <option value="检查并消除重复或冲突">检查并消除重复或冲突</option>
+            </select>
+          </div>
+          <textarea id="agentDetailMemoryInstruction" class="agent-detail-editor" rows="3" placeholder="例如：补充主角在两个空间中的外貌差异；把林瑶的武器改为青霜剑；删除已经废弃的旧时间线。"></textarea>
+          <div class="agent-actions">
+            <button class="btn btn-sm" id="agentDetailOrganizeMemoryBtn" type="button">生成记忆修改稿</button>
+            <button class="btn btn-sm" id="agentDetailApplyMemoryBtn" type="button" disabled>应用到作品记忆</button>
+            <button class="btn btn-ghost btn-sm" id="agentDetailClearMemoryResultBtn" type="button">清除结果</button>
+          </div>
+          <textarea id="agentDetailMemoryResult" class="agent-detail-editor agent-detail-memory-result" rows="8" placeholder="AI 会生成一份完整的作品记忆修改稿。你可以先检查或手动修改，再应用到作品记忆。"></textarea>
+          <span class="agent-action-status" id="agentDetailMemoryAiStatus" role="status" aria-live="polite"></span>
+        </div>
+        <details class="agent-memory-discovery">
+          <summary>从正文自动查找遗漏的记忆</summary>
+          <div class="agent-step-hint">这是可选的全面扫描，适合首次整理或正文累积较多时使用；日常补充请优先使用上方的定向功能。</div>
+          <button class="btn btn-ghost btn-sm" id="agentDetailDiscoverMemoryBtn" type="button">扫描现有正文并生成候选</button>
+        </details>
+      </div>
+      <div class="agent-detail-section agent-prompt-control-section">
+        <div class="agent-detail-section-heading"><strong>高级提示词与风格模板</strong><span class="param-hint">作为 system 系统指令发送</span></div>
+        <div class="agent-step-hint">高级提示词按对应环节进入 system 层；已启用的风格模板在生成正文时进入 system 层。需要模型优先遵守的提示词建议放在这里。</div>
+        <div id="agentPromptControls" class="agent-prompt-controls"></div>
+        <div class="agent-prompt-template-create">
+          <input id="agentPromptTemplateName" maxlength="80" placeholder="风格模板名称，例如：细腻心理描写">
+          <textarea id="agentPromptTemplateText" rows="3" placeholder="描述正文的语言风格、节奏、描写方式或特定体裁格式；不要填写必须长期遵守的剧情事实或硬性规则。"></textarea>
+          <button class="btn btn-ghost btn-sm" id="agentAddPromptTemplateBtn" type="button">添加风格模板</button>
+        </div>
+        <div id="agentPromptTemplates" class="agent-list"></div>
+        <span class="agent-action-status" id="agentPromptStatus" role="status" aria-live="polite"></span>
+      </div>
+        </section>
+        <section class="agent-detail-panel" data-agent-detail-panel="writing" role="tabpanel" aria-labelledby="agentDetailTabWriting">
+      <div class="agent-detail-section">
+        <div class="agent-detail-section-heading"><strong>本次续写任务</strong><span class="param-hint">仅用于这次生成</span></div>
+        <textarea id="agentDetailInput" class="agent-detail-editor" rows="3" placeholder="描述下一段要发生什么；留空则自然承接当前正文。"></textarea>
+        <div class="agent-context-range-row">
+          <div>
+            <label class="param-label" for="agentContextMessageLimit">发送最近正文</label>
+            <div class="param-hint" id="agentContextMessageLimitHint">按当前有效分支计算，一次作者消息或 AI 正文各算 1 条。</div>
+          </div>
+          <select id="agentContextMessageLimit" class="param-select">
+            <option value="12">最近 12 条</option>
+            <option value="24">最近 24 条（默认）</option>
+            <option value="40">最近 40 条</option>
+            <option value="80">最近 80 条</option>
+            <option value="0">全部正文</option>
+          </select>
+        </div>
+      </div>
+      <div class="agent-detail-section agent-detail-directive-section">
+        <div class="agent-detail-section-heading"><strong>长期写作规则</strong><span class="param-hint" id="agentDetailDirectiveSummary">作为普通写作要求发送</span></div>
+        <div class="agent-step-hint">长期规则会随每次创作和检查作为普通 user 写作要求发送；需要更高指令优先级的内容请放到上方高级提示词或风格模板。</div>
+        <textarea id="agentDetailDirective" class="agent-detail-editor agent-detail-directive" rows="3" placeholder="例如：始终使用第一人称；不得替主角做未被作者要求的重大决定。"></textarea>
+        <div class="agent-actions">
+          <button class="btn btn-ghost btn-sm" id="agentDetailAddDirectiveBtn" type="button">保存为长期规则</button>
+        </div>
+        <div id="agentDetailDirectivesList" class="agent-list"><div class="param-hint">暂无已确认要求</div></div>
+      </div>
+      <div class="agent-detail-section" id="agentDetailPreflightSection" hidden>
+        <div class="agent-detail-section-heading"><strong>当前草稿检查</strong><span class="param-hint">仅供参考，不会改写草稿或记忆</span></div>
+        <div id="agentDetailPreflightResult" class="agent-detail-result"></div>
+      </div>
+      <div class="agent-detail-section">
+        <div class="agent-detail-section-heading"><strong>续写草稿</strong><span class="agent-detail-meta">确认后才会加入正文</span></div>
+        <div class="agent-think-label">草稿生成推理（不会加入正文）</div>
+        <div id="agentDetailThink" class="agent-think agent-detail-think" hidden></div>
+        <textarea id="agentDetailDraft" class="agent-detail-editor agent-detail-draft" placeholder="生成的草稿会显示在这里。"></textarea>
+        <div class="agent-actions">
+          <button class="btn btn-sm" id="agentDetailGenerateBtn" type="button">生成续写草稿</button>
+          <button class="btn btn-sm" id="agentDetailApplyDraftBtn" type="button" disabled>确认并加入正文</button>
+          <button class="btn btn-ghost btn-sm" id="agentDetailPreflightBtn" type="button" disabled>检查当前草稿</button>
+          <button class="btn btn-ghost btn-sm" id="agentDetailClearDraftBtn" type="button" disabled>清空草稿</button>
+          <button class="btn btn-danger btn-sm agent-detail-preflight-right" id="agentDetailStopBtn" type="button" hidden>停止当前任务</button>
+          <span class="agent-action-status" id="agentDetailWritingStatus" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+        </section>
+        <section class="agent-detail-panel" data-agent-detail-panel="review" role="tabpanel" aria-labelledby="agentDetailTabReview">
+      <div class="agent-detail-section">
+        <div class="agent-detail-section-heading"><strong>待确认的记忆候选</strong><span class="param-hint">勾选后才会写入作品记忆</span></div>
+        <div id="agentDetailResult" class="agent-detail-result"><div class="param-hint">暂无记忆候选。可从当前草稿、现有正文或作者新增设定中整理。</div></div>
+        <div class="agent-actions">
+          <button class="btn btn-sm" id="agentDetailExtractBtn" type="button" disabled>从当前草稿整理候选</button>
+          <button class="btn btn-sm" id="agentDetailApplyResultBtn" type="button" disabled>写入已勾选项</button>
+          <button class="btn btn-ghost btn-sm" id="agentDetailClearResultBtn" type="button" disabled>清空候选</button>
+          <span class="agent-action-status" id="agentDetailStatus" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== APP DIALOG ====== -->
+<div class="modal-overlay app-dialog-overlay" id="appDialog" aria-hidden="true">
+  <div class="modal app-dialog" role="dialog" aria-modal="true" aria-labelledby="appDialogTitle" aria-describedby="appDialogMessage">
+    <div class="app-dialog-icon" id="appDialogIcon" aria-hidden="true"></div>
+    <div class="app-dialog-content">
+      <h3 id="appDialogTitle">请确认</h3>
+      <p id="appDialogMessage"></p>
+      <label class="app-dialog-field" id="appDialogField" for="appDialogInput" hidden>
+        <span id="appDialogInputLabel">名称</span>
+        <input id="appDialogInput" type="text" maxlength="100" autocomplete="off">
+      </label>
+    </div>
+    <div class="modal-actions app-dialog-actions">
+      <button class="btn btn-ghost" id="appDialogCancelBtn" type="button">取消</button>
+      <button class="btn" id="appDialogConfirmBtn" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== THEME MODAL ====== -->
+<div class="modal-overlay" id="themeModal">
+  <div class="modal theme-modal" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle">
+    <div class="logs-header">
+      <div>
+        <h3 id="themeModalTitle">主题外观</h3>
+        <p>选择界面配色，布局和功能保持一致。</p>
+      </div>
+      <button class="icon-btn" id="closeThemeBtn" type="button" title="关闭" aria-label="关闭主题设置">&#10005;</button>
+    </div>
+    <div class="theme-options" id="themeOptions">
+      <button class="theme-card" data-theme="original">
+        <span class="theme-preview theme-preview-original"><i></i><b></b><em></em></span>
+        <span><strong>清晨</strong><small>明亮通透的浅色界面</small></span>
+        <span class="theme-check">✓</span>
+      </button>
+      <button class="theme-card" data-theme="current">
+        <span class="theme-preview theme-preview-current"><i></i><b></b><em></em></span>
+        <span><strong>深夜</strong><small>沉稳深色，长时间使用不刺眼</small></span>
+        <span class="theme-check">✓</span>
+      </button>
+      <button class="theme-card" data-theme="linear">
+        <span class="theme-preview theme-preview-linear"><i></i><b></b><em></em></span>
+        <span><strong>石墨</strong><small>中性灰调，安静的工作台</small></span>
+        <span class="theme-check">✓</span>
+      </button>
+      <button class="theme-card" data-theme="liquid-glass">
+        <span class="theme-preview theme-preview-liquid-glass"><i></i><b></b><em></em></span>
+        <span><strong>玻璃</strong><small>半透明玻璃质感，背景从玻璃后面透出</small></span>
+        <span class="theme-check">✓</span>
+      </button>
+    </div>
+    <!-- 玻璃主题：背景图片（仅选中该主题时显示） -->
+    <div class="app-bg-section" id="appBgSection" hidden>
+      <div class="app-bg-heading">
+        <strong>背景图片</strong>
+        <span class="param-hint">玻璃面板是半透明的，会从这张图后面透出来。</span>
+      </div>
+      <div class="app-bg-actions">
+        <button class="btn btn-ghost btn-sm" id="appBgPickBtn" type="button">选择图片…</button>
+        <button class="btn btn-ghost btn-sm" id="appBgResetBtn" type="button">恢复默认</button>
+        <input type="file" id="appBgFile" accept="image/*" hidden>
+        <span class="app-bg-status" id="appBgStatus" role="status" aria-live="polite"></span>
+      </div>
+      <label class="app-bg-blur-row">
+        <span>背景模糊</span>
+        <input type="range" id="appBgBlur" min="0" max="40" step="2" value="0" aria-label="背景模糊强度（高斯模糊）">
+        <output id="appBgBlurValue">0 px</output>
+      </label>
+      <div class="param-hint" id="appBgNativeHint" hidden>检测到安卓端：未选择图片时将直接透出手机壁纸。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SYSTEM PROMPT MODAL ====== -->
+<div class="modal-overlay" id="systemPromptModal">
+  <div class="modal system-prompt-modal" role="dialog" aria-modal="true" aria-labelledby="systemPromptModalTitle">
+    <div class="modal-header">
+      <div>
+        <h3 id="systemPromptModalTitle">系统提示词</h3>
+        <p>启用后作为 system 消息发送给当前模型。</p>
+      </div>
+      <button class="icon-btn" id="closeSystemPromptBtn" title="关闭">&#10005;</button>
+    </div>
+    <label class="checkbox-label system-prompt-toggle">
+      <input type="checkbox" id="systemPromptEnabled">
+      启用系统提示词
+    </label>
+    <textarea id="systemPromptInput" class="system-prompt-input system-prompt-modal-input" rows="10" placeholder="例如：你是一名严谨的小说创作助手，保持人物设定和叙事视角一致。"></textarea>
+    <div class="param-hint">关闭后不发送 system 消息。</div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" id="saveSystemPromptBtn">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== LAN SYNC MODAL ====== -->
+<div class="modal-overlay" id="syncModal">
+  <div class="modal sync-modal" role="dialog" aria-modal="true" aria-labelledby="syncModalTitle">
+    <div class="modal-header">
+      <div>
+        <h3 id="syncModalTitle">局域网同步</h3>
+        <p>连接同一局域网中的电脑服务；同步方向按设备独立保存。</p>
+      </div>
+      <button class="icon-btn" id="closeSyncBtn" title="关闭">&#10005;</button>
+    </div>
+    <label class="checkbox-label sync-toggle"><input type="checkbox" id="syncEnabled"> 启用自动同步</label>
+    <label for="syncMode">同步方向</label>
+    <select id="syncMode" class="param-select">
+      <option value="two-way">双向同步（上传并接收，默认）</option>
+      <option value="pull-only">仅被同步（当前设备只接收服务端数据）</option>
+      <option value="push-only">仅同步（当前设备只上传数据到服务端）</option>
+    </select>
+    <div class="param-hint">只控制当前设备；旧设备建议使用“仅被同步”。</div>
+    <label for="syncServerUrl">电脑同步地址</label>
+    <input id="syncServerUrl" placeholder="例如：http://192.168.1.10:5200">
+    <div class="param-hint">电脑与手机需连接同一局域网；地址末尾不用填写 /api/sync。</div>
+    <label for="syncToken">同步口令</label>
+    <input id="syncToken" type="password" placeholder="启动电脑服务时显示的口令">
+    <div class="param-hint">API Key、主题、阅读设置和本机日志不同步。</div>
+    <div class="sync-status" id="syncStatus">未启用</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="syncNowBtn">立即同步</button>
+      <button class="btn btn-sm" id="saveSyncBtn">保存设置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== MANUAL AI MESSAGE EDIT MODAL ====== -->
+<div class="modal-overlay" id="aiMessageEditModal">
+  <div class="modal ai-message-edit-modal" role="dialog" aria-modal="true" aria-labelledby="aiMessageEditTitle">
+    <div class="modal-header">
+      <div>
+        <h3 id="aiMessageEditTitle">手动编辑正文</h3>
+        <p>直接修改当前显示的这一版 AI 正文；不会请求模型，也不会删除或重新生成后续内容。</p>
+      </div>
+      <button class="icon-btn" id="closeAiMessageEditBtn" type="button" title="关闭" aria-label="关闭手动编辑">&#10005;</button>
+    </div>
+    <textarea id="aiMessageEditInput" rows="14" spellcheck="false" aria-label="正文内容"></textarea>
+    <div class="param-hint">保存后会覆盖当前选中的 AI 版本。若它原本是未完成回复，将视为已经手动补全。</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="cancelAiMessageEditBtn" type="button">取消</button>
+      <button class="btn btn-sm" id="saveAiMessageEditBtn" type="button">保存正文</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== AI REVISION MODAL ====== -->
+<div class="modal-overlay" id="revisionModal">
+  <div class="modal revision-modal">
+    <h3>让 AI 修订正文</h3>
+    <div class="revision-original" id="revisionOriginal"></div>
+    <label for="revisionInput">告诉 AI 要删掉或修改什么</label>
+    <textarea id="revisionInput" rows="4" placeholder="例如：删掉这个角色，不要改变其他剧情；去掉这段打斗，改成双方谈判。"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="cancelRevisionBtn">取消</button>
+      <button class="btn btn-sm" id="submitRevisionBtn">AI 修订</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SETTINGS MODAL ====== -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal-header">
+      <div>
+        <h3 id="settingsModalTitle">模型配置</h3>
+        <p>管理 API、模型列表和浏览器代理方式。</p>
+      </div>
+      <button class="icon-btn" id="closeSettingsBtn" type="button" title="关闭" aria-label="关闭模型配置">&#10005;</button>
+    </div>
+    <div class="settings-config-list" id="configList"></div>
+    <button class="btn btn-ghost settings-add-btn" id="addConfigBtn" type="button">+ 新增配置</button>
+
+    <!-- Edit form -->
+    <div class="settings-edit-form" id="editForm">
+      <h4 id="editTitle">编辑配置</h4>
+      <label>配置名称</label>
+      <input id="editName" placeholder="例如：中转站A">
+      <label>API 类型</label>
+      <select id="editApiType">
+        <option value="openai">OpenAI 兼容 API</option>
+        <option value="gemini">Gemini 原生 API</option>
+      </select>
+      <label>API 地址 (Base URL)</label>
+      <input id="editUrl" placeholder="https://api.example.com/v1">
+      <div class="param-hint gemini-config-hint" id="geminiApiHint" hidden>Gemini 原生 API 可填写 https://generativelanguage.googleapis.com/v1beta；留空时使用该默认地址。</div>
+      <label>API Key</label>
+      <input id="editKey" type="password" placeholder="sk-...">
+      <label>默认模型</label>
+      <input id="editDefaultModel" placeholder="例如：gpt-4o">
+      <label>可选模型列表（每行一个）</label>
+      <textarea id="editModels" placeholder="gpt-4o&#10;gpt-4o-mini&#10;claude-3.5-sonnet&#10;deepseek-chat" rows="5"></textarea>
+      <label class="checkbox-label settings-proxy-toggle"><input type="checkbox" id="editUseProxy"> 使用 CORS 代理（网页版）</label>
+      <div class="param-hint">网页版通过当前服务的 /api/proxy 请求；Android APK 自动使用原生网络。</div>
+      <label>采样参数发送方式</label>
+      <select id="editSamplingMode">
+        <option value="auto">自动（推荐）</option>
+        <option value="always">始终发送 Temperature / Top P</option>
+        <option value="never">从不发送 Temperature / Top P</option>
+      </select>
+      <div class="param-hint">GPT-6、o1/o3 等推理模型不接受 Temperature / Top P，会报 “Unsupported parameter: 'temperature'”。“自动”会在识别到这类模型时直接省略；即使服务端拒绝，也会自动摘掉该参数重试一次，不需要手工改。</div>
+      <div class="modal-actions">
+        <button class="btn btn-danger btn-sm settings-delete-btn" id="deleteConfigBtn" type="button">删除</button>
+        <button class="btn btn-ghost btn-sm" id="cancelEditBtn" type="button">取消</button>
+        <button class="btn btn-sm" id="saveConfigBtn" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== DATA CENTER MODAL ====== -->
+<div class="modal-overlay" id="dataCenterModal">
+  <div class="modal data-center-modal">
+    <div class="logs-header">
+      <div>
+        <h3>数据中心</h3>
+        <p>查看和管理当前浏览器保存的对话、讨论和作品记忆。</p>
+      </div>
+      <button class="icon-btn" id="closeDataCenterBtn" title="关闭">&#10005;</button>
+    </div>
+    <div class="data-center-toolbar">
+      <select id="dataCenterConversation" aria-label="选择数据会话"></select>
+      <button class="btn btn-ghost btn-sm" id="refreshDataCenterBtn">刷新</button>
+    </div>
+    <div class="data-center-location">
+      <div class="data-center-location-title">本地保存位置</div>
+      <div id="dataCenterLocationText">浏览器本地数据库：IndexedDB / ai_chat_content_db（旧 localStorage 副本暂时保留）</div>
+      <button class="btn btn-ghost btn-sm" id="openDataFolderBtn" type="button">打开所在位置</button>
+    </div>
+    <div class="data-center-grid">
+      <section class="data-center-section data-center-snapshot-section">
+        <div class="data-center-section-heading">
+          <h4>本地数据快照</h4>
+          <span class="param-hint">保存当前全部业务数据；不包含日志</span>
+        </div>
+        <div class="data-center-snapshot-create">
+          <input id="dataSnapshotName" maxlength="80" placeholder="例如：第十二章完成前">
+          <button class="btn btn-sm" id="createDataSnapshotBtn" type="button">保存当前数据</button>
+        </div>
+        <div id="dataSnapshotList" class="data-snapshot-list"><div class="param-hint">暂无本地快照</div></div>
+        <span class="data-center-save-status" id="dataSnapshotStatus" role="status" aria-live="polite"></span>
+      </section>
+      <section class="data-center-section">
+        <div class="data-center-section-heading">
+          <h4>对话数据</h4>
+          <span id="dataCenterConversationMeta" class="param-hint"></span>
+        </div>
+        <textarea id="dataCenterConversationData" class="data-center-editor" spellcheck="false"></textarea>
+        <div class="modal-actions">
+          <button class="btn btn-danger btn-sm" id="clearCurrentConversationBtn">清空当前对话</button>
+          <button class="btn btn-sm" id="saveConversationDataBtn">保存对话数据</button>
+          <span class="data-center-save-status" id="conversationSaveStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+      <section class="data-center-section">
+        <div class="data-center-section-heading">
+          <h4>讨论数据</h4>
+          <span id="dataCenterDiscussionMeta" class="param-hint"></span>
+        </div>
+        <textarea id="dataCenterDiscussionData" class="data-center-editor" spellcheck="false"></textarea>
+        <div class="modal-actions">
+          <button class="btn btn-ghost btn-sm" id="clearDiscussionDataBtn">清空讨论</button>
+          <button class="btn btn-sm" id="saveDiscussionDataBtn">保存讨论数据</button>
+          <span class="data-center-save-status" id="discussionSaveStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+      <section class="data-center-section data-center-section-wide">
+        <div class="data-center-section-heading">
+          <h4>作品记忆</h4>
+          <span class="param-hint">当前会话的 Markdown</span>
+        </div>
+        <textarea id="dataCenterMemoryData" class="data-center-editor data-center-memory-editor" spellcheck="false"></textarea>
+        <div class="modal-actions">
+          <button class="btn btn-ghost btn-sm" id="clearMemoryDataBtn">清空作品记忆</button>
+          <button class="btn btn-sm" id="saveMemoryDataBtn">保存作品记忆</button>
+          <span class="data-center-save-status" id="memorySaveStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ====== LOGS MODAL ====== -->
+<div class="modal-overlay" id="logsModal">
+  <div class="modal logs-modal">
+    <div class="logs-header">
+      <div>
+        <h3>运行日志</h3>
+        <p>日志仅保存在当前设备；默认记录摘要，可选保存完整模型输入输出。</p>
+      </div>
+      <button class="icon-btn" id="closeLogsBtn" title="关闭">&#10005;</button>
+    </div>
+    <details class="cache-stats" id="cacheStats">
+      <summary class="cache-stats-summary" id="cacheStatsSummary" role="button" aria-expanded="false" aria-controls="cacheStatsContent" tabindex="0">
+        <span><strong>缓存命中统计</strong><small id="cacheStatsSummaryText">点击展开查看</small></span>
+      </summary>
+      <div class="cache-stats-content" id="cacheStatsContent" aria-live="polite">
+        <div class="logs-empty">正在汇总缓存统计…</div>
+      </div>
+    </details>
+    <div class="logs-toolbar">
+      <select id="logFilter" aria-label="日志类型">
+        <option value="all">全部</option>
+        <option value="access">服务器访问</option>
+        <option value="operation">聊天操作</option>
+        <option value="request">模型请求</option>
+        <option value="agent">创作工作台</option>
+        <option value="sync">同步</option>
+        <option value="error">错误</option>
+      </select>
+      <label class="checkbox-label log-debug-toggle"><input type="checkbox" id="logIncludeContent">记录完整模型输入输出</label>
+      <button class="btn btn-ghost btn-sm" id="refreshLogsBtn">刷新</button>
+    </div>
+    <p class="log-recording-hint" id="logRecordingHint"></p>
+    <div class="logs-toolbar logs-cleanup-toolbar">
+      <select id="logCleanupKind" aria-label="要清理的日志类型">
+        <option value="all">清理全部类型</option>
+        <option value="request">仅清理模型请求</option>
+        <option value="agent">仅清理创作工作台日志</option>
+        <option value="operation">仅清理操作日志</option>
+        <option value="sync">仅清理同步日志</option>
+        <option value="error">仅清理错误日志</option>
+      </select>
+      <select id="logCleanupDays" aria-label="日志清理时间范围">
+        <option value="">全部时间</option>
+        <option value="1">1 天前</option>
+        <option value="7">7 天前</option>
+        <option value="30">30 天前</option>
+        <option value="90">90 天前</option>
+      </select>
+      <button class="btn btn-danger btn-sm" id="clearLogsBtn">按条件清理</button>
+    </div>
+    <div class="logs-list" id="logsList"><div class="logs-empty">正在读取日志…</div></div>
+  </div>
+</div>
+
+<!-- ====== LOG DETAIL MODAL ====== -->
+<div class="modal-overlay" id="logDetailModal">
+  <div class="modal log-detail-modal">
+    <div class="logs-header">
+      <div>
+        <h3 id="logDetailTitle">日志详情</h3>
+        <p id="logDetailMeta"></p>
+      </div>
+      <button class="icon-btn" id="closeLogDetailBtn" title="关闭">&#10005;</button>
+    </div>
+    <div class="log-detail-body" id="logDetailBody"></div>
+  </div>
+</div>
+
+<!-- ====== SCRIPTS ====== -->
+<script src="js/marked-15.0.12.min.js"></script>
+<script type="module" src="js/main.js?v=98"></script>
+
+</body>
+</html>
